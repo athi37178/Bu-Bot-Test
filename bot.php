@@ -6,42 +6,78 @@ $content = file_get_contents('php://input');
 // Parse JSON
 $events = json_decode($content, true);
 // Validate parsed JSON data
-if (!is_null($events['events'])) {
-	// Loop through each event
-	foreach ($events['events'] as $event) {
-		// Reply only when message sent is in 'text' format
-		if ($event['type'] == 'message' && $event['message']['type'] == 'text') {
-			// Get text sent
-			$text = $event['message']['text'];
-			// Get replyToken
-			$replyToken = $event['replyToken'];
+class TextMessageHandler implements EventHandler
+{
+    /** @var LINEBot $bot */
+    private $bot;
+    /** @var \Monolog\Logger $logger */
+    private $logger;
+    /** @var \Slim\Http\Request $logger */
+    private $req;
+    /** @var TextMessage $textMessage */
+    private $textMessage;
 
-			// Build message to reply back
-			$messages = [
-				'type' => 'text',
-				'text' => $text
-			];
+    private $redis;
 
-			// Make a POST Request to Messaging API to reply to sender
-			$url = 'https://api.line.me/v2/bot/message/reply';
-			$data = [
-				'replyToken' => $replyToken,
-				'messages' => [$messages],
-			];
-			$post = json_encode($data);
-			$headers = array('Content-Type: application/json', 'Authorization: Bearer ' . $access_token);
+    /**
+     * TextMessageHandler constructor.
+     * @param $bot
+     * @param $logger
+     * @param \Slim\Http\Request $req
+     * @param TextMessage $textMessage
+     */
+    public function __construct($bot, $logger, \Slim\Http\Request $req, TextMessage $textMessage)
+    {
+        $this->bot = $bot;
+        $this->logger = $logger;
+        $this->req = $req;
+        $this->textMessage = $textMessage;
+        $this->redis = new Client(getenv('REDIS_URL'));
+    }
 
-			$ch = curl_init($url);
-			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-			curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
-			curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-			curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-			$result = curl_exec($ch);
-			curl_close($ch);
+    public function handle()
+    {
+        $TEACH_SIGN = '==';
+        $text = $this->textMessage->getText();
+        $text = trim($text);
+        # Remove ZWSP
+        $text = str_replace("\xE2\x80\x8B", "", $text);
+        $replyToken = $this->textMessage->getReplyToken();
 
-			echo $result . "\r\n";
-		}
-	}
+        if ($text == 'บอท') {
+            $this->bot->replyText($replyToken, $out =
+                "ใช้ $TEACH_SIGN เพื่อสอนเราได้นะ\nเช่น สวัสดี" . $TEACH_SIGN . "สวัสดีชาวโลก");
+            return true;
+        }
+
+        $sep_pos = strpos($text, $TEACH_SIGN);
+        if ($sep_pos > 0) {
+            $text_arr = explode($TEACH_SIGN, $text, 2);
+            if (count($text_arr) == 2) {
+                $this->saveResponse($text_arr[0], $text_arr[1]);
+            }
+            return true;
+        }
+
+        $re = $this->getResponse($text);
+        $re_count = count($re);
+        if ($re_count > 0) {
+            // Random response.
+            $randNum = rand(0, $re_count - 1);
+            $response = $re[$randNum];
+            $this->bot->replyText($replyToken, $response);
+            return true;
+        }
+        return false;
+    }
+
+    private function saveResponse($keyword, $response)
+    {
+        $this->redis->lpush("response:$keyword", $response);
+    }
+
+    private function getResponse($keyword)
+    {
+        return $this->redis->lrange("response:$keyword", 0, -1);
+    }
 }
-echo "OK";
