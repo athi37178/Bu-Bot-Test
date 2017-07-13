@@ -1,11 +1,14 @@
 <?php
 $access_token = 'LiqqHhZZ3Fejw0AYMisCCzy44E6hop5sHAkzaUYpbDdFUrg7rIQchP+Vbv1dgHI9IuY3OEJKx9AhMwq8NEOLUvI1/AR1bWg9C1/Qf9jzKISV5818paDcbZwlF7UkaGUa5G9oWUbTbmQ/RUWBkRgCqwdB04t89/1O/w1cDnyilFU=';
 
-// Get POST body content
-$content = file_get_contents('php://input');
-// Parse JSON
-$events = json_decode($content, true);
-// Validate parsed JSON data
+namespace LINE\LINEBot\KitchenSink\EventHandler\MessageHandler;
+
+use LINE\LINEBot;
+use LINE\LINEBot\Event\MessageEvent\TextMessage;
+use LINE\LINEBot\KitchenSink\EventHandler;
+
+use Predis\Client; 
+
 class TextMessageHandler implements EventHandler
 {
     /** @var LINEBot $bot */
